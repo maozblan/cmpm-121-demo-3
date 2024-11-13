@@ -71,16 +71,29 @@ function spawnCache(i: number, j: number) {
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
                 <div>There is a cache here at "${i},${j}". It has value <span id="value">${pointValue}</span>.</div>
-                <button id="poke">poke</button>`;
+                <button id="collect">collect</button>
+                <button id="deposit">deposit</button>`;
 
-    // Clicking the button decrements the cache's value and increments the player's points
+    // retrive coins from cache
     popupDiv
-      .querySelector<HTMLButtonElement>("#poke")!
+      .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
         pointValue--;
         popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
           pointValue.toString();
         playerPoints++;
+        statusPanel.innerHTML = `${playerPoints} points accumulated`;
+      });
+
+    // deposit coins into cache
+    popupDiv
+      .querySelector<HTMLButtonElement>("#deposit")!
+      .addEventListener("click", () => {
+        if (playerPoints === 0) return;
+        pointValue++;
+        popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
+          pointValue.toString();
+        playerPoints--;
         statusPanel.innerHTML = `${playerPoints} points accumulated`;
       });
 
