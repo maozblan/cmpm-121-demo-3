@@ -41,16 +41,23 @@ leaflet
 
 // Add a marker to represent the player
 const playerMarker = leaflet.marker(OAKES_CLASSROOM);
-playerMarker.bindTooltip("That's you!");
+playerMarker.bindTooltip("YOU");
 playerMarker.addTo(map);
 
 // Display the player's points
 let playerPoints = 0;
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory")!;
-statusPanel.innerHTML = "No points yet...";
+function updateStatusPanel(): void {
+  if (playerPoints === 0) {
+    statusPanel.innerHTML = "No coins yet...";
+    return;
+  }
+  statusPanel.innerHTML = `${playerPoints} coins accumulated`;
+}
+updateStatusPanel();
 
 // Add caches to the map by cell numbers
-function spawnCache(i: number, j: number) {
+function spawnCache(i: number, j: number): void {
   // Convert cell numbers into lat/lng bounds
   const origin = OAKES_CLASSROOM;
   const bounds = leaflet.latLngBounds([
@@ -70,7 +77,7 @@ function spawnCache(i: number, j: number) {
     // The popup offers a description and button
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
-                <div>There is a cache here at "${i},${j}". It has value <span id="value">${pointValue}</span>.</div>
+                <div>There is a cache here at "${i}, ${j}". It has <span id="value">${pointValue}</span> coins.</div>
                 <button id="collect">collect</button>
                 <button id="deposit">deposit</button>`;
 
@@ -78,26 +85,31 @@ function spawnCache(i: number, j: number) {
     popupDiv
       .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
-        pointValue--;
-        popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-          pointValue.toString();
-        playerPoints++;
-        statusPanel.innerHTML = `${playerPoints} points accumulated`;
+        [pointValue, playerPoints] = trade(pointValue, playerPoints);
+        updateUI();
       });
 
     // deposit coins into cache
     popupDiv
       .querySelector<HTMLButtonElement>("#deposit")!
       .addEventListener("click", () => {
-        if (playerPoints === 0) return;
-        pointValue++;
-        popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-          pointValue.toString();
-        playerPoints--;
-        statusPanel.innerHTML = `${playerPoints} points accumulated`;
+        [playerPoints, pointValue] = trade(playerPoints, pointValue);
+        updateUI();
       });
 
     return popupDiv;
+
+    function trade(source: number, stock: number): number[] {
+      if (source === 0) return [source, stock];
+      source--;
+      stock++;
+      return [source, stock];
+    }
+    function updateUI(): void {
+      updateStatusPanel();
+      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent =
+        pointValue.toString();
+    }
   });
 }
 
