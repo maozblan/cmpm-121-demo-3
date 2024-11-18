@@ -7,6 +7,8 @@ interface Coin extends Cell {
   readonly serial: number;
 }
 
-interface Cache extends Cell {
-  readonly stock: Coin[];
+interface GeoCache extends Cell {
+  stock: Coin[];
 }
+
+type Momento = string;

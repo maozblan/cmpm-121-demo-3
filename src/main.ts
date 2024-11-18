@@ -70,24 +70,38 @@ function updateStatusPanel(): void {
 }
 updateStatusPanel();
 
-// Add caches to the map by cell numbers
-function spawnCache(i: number, j: number): void {
-  const bounds = gameBoard.getCellBounds({ i, j });
+function createCache(loc: Cell): GeoCache {
+  return {
+    i: loc.i,
+    j: loc.j,
+    // spawn random number of coins for cache OR get from momento
+    stock: fromMomento(loc) ??
+      Array.from(
+        {
+          length: Math.floor(
+            luck([loc.i, loc.j, "initialValue"].toString()) * 10,
+          ),
+        },
+        (_, serial) => ({ i: loc.i, j: loc.j, serial }),
+      ),
+  };
+}
 
+// all cache to map
+const visibleCaches: GeoCache[] = [];
+const cacheLayer = leaflet.layerGroup().addTo(map);
+function spawnCache(cache: GeoCache): void {
+  visibleCaches.push(cache);
+
+  const bounds = gameBoard.getCellBounds({ i: cache.i, j: cache.j });
   const rect = leaflet.rectangle(bounds);
-  rect.addTo(map);
-
-  // spawn random number of coins for cache
-  let coins: Coin[] = Array.from(
-    { length: Math.floor(luck([i, j, "initialValue"].toString()) * 10) },
-    (_, serial) => ({ i, j, serial }),
-  );
+  cacheLayer.addLayer(rect);
 
   // Handle interactions with the cache
   rect.bindPopup(() => {
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
-        <div>Cache Index: ${i}, ${j}. It has <span id="value"></span> coins.</div>
+        <div>Cache Index: ${cache.i}, ${cache.j}. It has <span id="value"></span> coins.</div>
         <ul id="cache-inventory"></ul>
         <button id="collect">collect</button>
         <button id="deposit">deposit</button>`;
@@ -98,7 +112,7 @@ function spawnCache(i: number, j: number): void {
     popupDiv
       .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
-        [coins, playerCoins] = trade(coins, playerCoins);
+        [cache.stock, playerCoins] = trade(cache.stock, playerCoins);
         updateUI();
       });
 
@@ -106,7 +120,7 @@ function spawnCache(i: number, j: number): void {
     popupDiv
       .querySelector<HTMLButtonElement>("#deposit")!
       .addEventListener("click", () => {
-        [playerCoins, coins] = trade(playerCoins, coins);
+        [playerCoins, cache.stock] = trade(playerCoins, cache.stock);
         updateUI();
       });
 
@@ -119,23 +133,16 @@ function spawnCache(i: number, j: number): void {
     }
     function updateUI(): void {
       updateStatusPanel();
-      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = coins
+      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = cache
+        .stock
         .length.toString();
       popupDiv.querySelector<HTMLUListElement>("#cache-inventory")!.innerHTML =
-        coins
+        cache.stock
           .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
           .join("");
     }
   });
 }
-
-// spawn caches in neighborhood
-function displayNearbyCaches() {
-  gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
-    spawnCache(cell.i, cell.j);
-  });
-}
-displayNearbyCaches();
 
 const app: HTMLDivElement = document.querySelector("#app")!;
 
@@ -145,6 +152,37 @@ button.addEventListener("click", () => {
   alert("you clicked the button!");
 });
 app.append(button);
+
+// momentos
+const momentos: { [key: string]: Momento } = {};
+
+function toMomento(cache: GeoCache): void {
+  const key = [cache.i, cache.j].toString();
+  momentos[key] = JSON.stringify(cache.stock);
+}
+
+function fromMomento(cell: Cell): Coin[] | undefined {
+  const key = [cell.i, cell.j].toString();
+  if (!(key in momentos)) return undefined;
+  return JSON.parse(momentos[key]);
+}
+
+// spawn caches in neighborhood
+function displayNearbyCaches() {
+  gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
+    spawnCache(createCache(cell));
+  });
+}
+// instantly spawn caches on load
+displayNearbyCaches();
+
+function removeOldCaches() {
+  visibleCaches.forEach((cache) => {
+    toMomento(cache);
+  });
+  cacheLayer.clearLayers();
+  visibleCaches.length = 0;
+}
 
 // controlPanel functionality
 interface Cmd {
@@ -181,7 +219,8 @@ function movePlayer(direction: Cell): void {
   };
   playerMarker.setLatLng(newPos);
 
-  // displayNearbyCaches();
+  removeOldCaches();
+  displayNearbyCaches();
 }
 
 for (const button in controlPanel) {
