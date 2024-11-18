@@ -59,7 +59,7 @@ playerMarker.bindTooltip("YOU");
 playerMarker.addTo(map);
 
 // Display the player's points
-const playerCoins: Coin[] = [];
+let playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   if (playerCoins.length === 0) {
@@ -67,6 +67,9 @@ function updateStatusPanel(): void {
     return;
   }
   statusPanel.innerHTML = `${playerCoins.length} coins accumulated`;
+  document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
+    playerCoins.map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
+      .join("");
 }
 updateStatusPanel();
 
@@ -77,26 +80,28 @@ function spawnCache(i: number, j: number): void {
   const rect = leaflet.rectangle(bounds);
   rect.addTo(map);
 
+  // spawn random number of coins for cache
+  let coins: Coin[] = Array.from(
+    { length: Math.floor(luck([i, j, "initialValue"].toString()) * 10) },
+    (_, serial) => ({ i, j, serial }),
+  );
+
   // Handle interactions with the cache
   rect.bindPopup(() => {
-    // Each cache has a random point value, mutable by the player
-    const coins: Coin[] = Array.from(
-      { length: Math.floor(luck([i, j, "initialValue"].toString()) * 100) },
-      (_, serial) => ({ i, j, serial }),
-    );
-
-    // The popup offers a description and button
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
-                <div>There is a cache here at "${i}, ${j}". It has <span id="value">${coins.length}</span> coins.</div>
-                <button id="collect">collect</button>
-                <button id="deposit">deposit</button>`;
+        <div>Cache Index: ${i}, ${j}. It has <span id="value"></span> coins.</div>
+        <ul id="cache-inventory"></ul>
+        <button id="collect">collect</button>
+        <button id="deposit">deposit</button>`;
+    // instantly update ui to get the number of coins and inventory to display
+    updateUI();
 
     // retrive coins from cache
     popupDiv
       .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
-        trade(coins, playerCoins);
+        [coins, playerCoins] = trade(coins, playerCoins);
         updateUI();
       });
 
@@ -104,20 +109,25 @@ function spawnCache(i: number, j: number): void {
     popupDiv
       .querySelector<HTMLButtonElement>("#deposit")!
       .addEventListener("click", () => {
-        trade(playerCoins, coins);
+        [playerCoins, coins] = trade(playerCoins, coins);
         updateUI();
       });
 
     return popupDiv;
 
-    function trade(source: Coin[], stock: Coin[]): void {
-      if (source.length === 0) return;
+    function trade(source: Coin[], stock: Coin[]): Coin[][] {
+      if (source.length === 0) return [source, stock];
       stock.push(source.shift()!);
+      return [source, stock];
     }
     function updateUI(): void {
       updateStatusPanel();
       popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = coins
         .length.toString();
+      popupDiv.querySelector<HTMLUListElement>("#cache-inventory")!.innerHTML =
+        coins
+          .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
+          .join("");
     }
   });
 }
