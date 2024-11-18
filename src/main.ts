@@ -59,14 +59,14 @@ playerMarker.bindTooltip("YOU");
 playerMarker.addTo(map);
 
 // Display the player's points
-let playerPoints = 0;
+const playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
-  if (playerPoints === 0) {
+  if (playerCoins.length === 0) {
     statusPanel.innerHTML = "No coins yet...";
     return;
   }
-  statusPanel.innerHTML = `${playerPoints} coins accumulated`;
+  statusPanel.innerHTML = `${playerCoins.length} coins accumulated`;
 }
 updateStatusPanel();
 
@@ -80,12 +80,15 @@ function spawnCache(i: number, j: number): void {
   // Handle interactions with the cache
   rect.bindPopup(() => {
     // Each cache has a random point value, mutable by the player
-    let pointValue = Math.floor(luck([i, j, "initialValue"].toString()) * 100);
+    const coins: Coin[] = Array.from(
+      { length: Math.floor(luck([i, j, "initialValue"].toString()) * 100) },
+      (_, serial) => ({ i, j, serial }),
+    );
 
     // The popup offers a description and button
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
-                <div>There is a cache here at "${i}, ${j}". It has <span id="value">${pointValue}</span> coins.</div>
+                <div>There is a cache here at "${i}, ${j}". It has <span id="value">${coins.length}</span> coins.</div>
                 <button id="collect">collect</button>
                 <button id="deposit">deposit</button>`;
 
@@ -93,7 +96,7 @@ function spawnCache(i: number, j: number): void {
     popupDiv
       .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
-        [pointValue, playerPoints] = trade(pointValue, playerPoints);
+        trade(coins, playerCoins);
         updateUI();
       });
 
@@ -101,22 +104,20 @@ function spawnCache(i: number, j: number): void {
     popupDiv
       .querySelector<HTMLButtonElement>("#deposit")!
       .addEventListener("click", () => {
-        [playerPoints, pointValue] = trade(playerPoints, pointValue);
+        trade(playerCoins, coins);
         updateUI();
       });
 
     return popupDiv;
 
-    function trade(source: number, stock: number): number[] {
-      if (source === 0) return [source, stock];
-      source--;
-      stock++;
-      return [source, stock];
+    function trade(source: Coin[], stock: Coin[]): void {
+      if (source.length === 0) return;
+      stock.push(source.shift()!);
     }
     function updateUI(): void {
       updateStatusPanel();
-      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent =
-        pointValue.toString();
+      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = coins
+        .length.toString();
     }
   });
 }
