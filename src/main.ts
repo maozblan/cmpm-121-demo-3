@@ -11,27 +11,33 @@ import "./leafletWorkaround.ts";
 // Deterministic random number generator
 import luck from "./luck.ts";
 
+// flyweight board
+import Board from "./board.ts";
+
 interface Cell {
   i: number;
   j: number;
 }
 
 function cellToLatLng(cell: Cell): leaflet.LatLng {
-  return leaflet.latLng(
-    cell.i * TILE_DEGREES,
-    cell.j * TILE_DEGREES,
-  );
+  return leaflet.latLng(cell.i * TILE_DEGREES, cell.j * TILE_DEGREES);
 }
 
 // global coordinate system as defined by d1.b
 const OAKES_CLASSROOM: Cell = { i: 369894, j: -1220627 };
-const NULL_ISLAND: Cell = { i: 0, j: 0 };
 
 // Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
+
+// create board to hold geocache cells
+const gameBoard = new Board(
+  TILE_DEGREES,
+  NEIGHBORHOOD_SIZE,
+  CACHE_SPAWN_PROBABILITY,
+);
 
 // Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(document.getElementById("map")!, {
@@ -71,14 +77,8 @@ updateStatusPanel();
 
 // Add caches to the map by cell numbers
 function spawnCache(i: number, j: number): void {
-  // Convert cell numbers into lat/lng bounds
-  const origin = cellToLatLng(NULL_ISLAND);
-  const bounds = leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
-  ]);
+  const bounds = gameBoard.getCellBounds({ i, j });
 
-  // Add a rectangle to the map to represent the cache
   const rect = leaflet.rectangle(bounds);
   rect.addTo(map);
 
@@ -126,16 +126,10 @@ function spawnCache(i: number, j: number): void {
   });
 }
 
-// Look around the player's neighborhood for caches to spawn
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    const lat = i + OAKES_CLASSROOM.i;
-    const lng = j + OAKES_CLASSROOM.j;
-    if (luck([lat, lng].toString()) < CACHE_SPAWN_PROBABILITY) {
-      spawnCache(lat, lng);
-    }
-  }
-}
+// spawn caches in neighborhood
+gameBoard.getCellsNearPoint(cellToLatLng(OAKES_CLASSROOM)).forEach((cell) => {
+  spawnCache(cell.i, cell.j);
+});
 
 const app: HTMLDivElement = document.querySelector("#app")!;
 
