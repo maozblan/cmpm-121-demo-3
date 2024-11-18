@@ -204,3 +204,5 @@ for (const button in controlPanel) {
   const bElement = document.querySelector<HTMLButtonElement>(`#${button}`)!;
   bElement.addEventListener("click", controlPanel[button].execute);
 }
+
+// if only i read instructions...
