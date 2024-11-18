@@ -1,11 +1,6 @@
 import leaflet from "leaflet";
 import luck from "./luck.ts";
 
-interface Cell {
-  readonly i: number;
-  readonly j: number;
-}
-
 export default class Board {
   readonly tileWidth: number;
   readonly tileVisibilityRadius: number;

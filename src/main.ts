@@ -14,11 +14,6 @@ import luck from "./luck.ts";
 // flyweight board
 import Board from "./board.ts";
 
-interface Cell {
-  i: number;
-  j: number;
-}
-
 function cellToLatLng(cell: Cell): leaflet.LatLng {
   return leaflet.latLng(cell.i * TILE_DEGREES, cell.j * TILE_DEGREES);
 }
@@ -65,7 +60,7 @@ playerMarker.addTo(map);
 
 // Display the player's points
 let playerPoints = 0;
-const statusPanel = document.querySelector<HTMLDivElement>("#inventory")!;
+const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   if (playerPoints === 0) {
     statusPanel.innerHTML = "No coins yet...";
