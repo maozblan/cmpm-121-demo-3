@@ -63,7 +63,8 @@ let playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
-    playerCoins.map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
+    playerCoins
+      .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
       .join("");
 
   if (playerCoins.length === 0) {
@@ -134,9 +135,12 @@ function spawnCache(i: number, j: number): void {
 }
 
 // spawn caches in neighborhood
-gameBoard.getCellsNearPoint(cellToLatLng(OAKES_CLASSROOM)).forEach((cell) => {
-  spawnCache(cell.i, cell.j);
-});
+function displayNearbyCaches() {
+  gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
+    spawnCache(cell.i, cell.j);
+  });
+}
+displayNearbyCaches();
 
 const app: HTMLDivElement = document.querySelector("#app")!;
 
@@ -147,4 +151,45 @@ button.addEventListener("click", () => {
 });
 app.append(button);
 
-// ahahahahha... random sunday motivation? none
+// controlPanel functionality
+interface Cmd {
+  execute(): void;
+}
+const controlPanel: { [key: string]: Cmd } = {
+  north: {
+    execute() {
+      movePlayer({ i: 1, j: 0 });
+    },
+  },
+  east: {
+    execute() {
+      movePlayer({ i: 0, j: 1 });
+    },
+  },
+  south: {
+    execute() {
+      movePlayer({ i: -1, j: 0 });
+    },
+  },
+  west: {
+    execute() {
+      movePlayer({ i: 0, j: -1 });
+    },
+  },
+};
+
+function movePlayer(direction: Cell): void {
+  const currentPos = playerMarker.getLatLng();
+  const newPos = {
+    lat: currentPos.lat + TILE_DEGREES * direction.i,
+    lng: currentPos.lng + TILE_DEGREES * direction.j,
+  };
+  playerMarker.setLatLng(newPos);
+
+  // displayNearbyCaches();
+}
+
+for (const button in controlPanel) {
+  const bElement = document.querySelector<HTMLButtonElement>(`#${button}`)!;
+  bElement.addEventListener("click", controlPanel[button].execute);
+}
