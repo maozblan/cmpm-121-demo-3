@@ -62,14 +62,15 @@ playerMarker.addTo(map);
 let playerCoins: Coin[] = [];
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
+  document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
+    playerCoins.map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
+      .join("");
+
   if (playerCoins.length === 0) {
     statusPanel.innerHTML = "No coins yet...";
     return;
   }
   statusPanel.innerHTML = `${playerCoins.length} coins accumulated`;
-  document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
-    playerCoins.map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
-      .join("");
 }
 updateStatusPanel();
 
@@ -145,3 +146,5 @@ button.addEventListener("click", () => {
   alert("you clicked the button!");
 });
 app.append(button);
+
+// ahahahahha... random sunday motivation? none
