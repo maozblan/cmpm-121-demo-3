@@ -8,11 +8,11 @@ import "./style2.css";
 // Fix missing marker images
 import "./leafletWorkaround.ts";
 
-// Deterministic random number generator
-import luck from "./luck.ts";
-
 // flyweight board
 import Board from "./board.ts";
+
+// momento geocache
+import Geocache from "./geocache.ts";
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 
@@ -70,27 +70,10 @@ function updateStatusPanel(): void {
 }
 updateStatusPanel();
 
-function createCache(loc: Cell): GeoCache {
-  return {
-    i: loc.i,
-    j: loc.j,
-    // spawn random number of coins for cache OR get from momento
-    stock: fromMomento(loc) ??
-      Array.from(
-        {
-          length: Math.floor(
-            luck([loc.i, loc.j, "initialValue"].toString()) * 10,
-          ),
-        },
-        (_, serial) => ({ i: loc.i, j: loc.j, serial }),
-      ),
-  };
-}
-
 // all cache to map
-const visibleCaches: GeoCache[] = [];
+const visibleCaches: Geocache[] = [];
 const cacheLayer = leaflet.layerGroup().addTo(map);
-function spawnCache(cache: GeoCache): void {
+function spawnCache(cache: Geocache): void {
   visibleCaches.push(cache);
 
   const bounds = gameBoard.getCellBounds({ i: cache.i, j: cache.j });
@@ -153,24 +136,18 @@ button.addEventListener("click", () => {
 });
 app.append(button);
 
-// momentos
-const momentos: { [key: string]: Momento } = {};
-
-function toMomento(cache: GeoCache): void {
-  const key = [cache.i, cache.j].toString();
-  momentos[key] = JSON.stringify(cache.stock);
+// updating caches with momento
+const momento: { [key: string]: string } = {};
+function momentoKey(cell: Cell): string {
+  return [cell.i, cell.j].toString();
 }
-
-function fromMomento(cell: Cell): Coin[] | undefined {
-  const key = [cell.i, cell.j].toString();
-  if (!(key in momentos)) return undefined;
-  return JSON.parse(momentos[key]);
-}
-
-// spawn caches in neighborhood
 function displayNearbyCaches() {
   gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
-    spawnCache(createCache(cell));
+    const cache = new Geocache(cell);
+    if (momento[momentoKey(cell)] !== undefined) {
+      cache.fromMomento(momento[momentoKey(cell)]);
+    }
+    spawnCache(cache);
   });
 }
 // instantly spawn caches on load
@@ -178,7 +155,7 @@ displayNearbyCaches();
 
 function removeOldCaches() {
   visibleCaches.forEach((cache) => {
-    toMomento(cache);
+    momento[momentoKey({ i: cache.i, j: cache.j })] = cache.toMomento();
   });
   cacheLayer.clearLayers();
   visibleCaches.length = 0;
