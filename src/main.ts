@@ -14,12 +14,7 @@ import luck from "./luck.ts";
 // flyweight board
 import Board from "./board.ts";
 
-function cellToLatLng(cell: Cell): leaflet.LatLng {
-  return leaflet.latLng(cell.i * TILE_DEGREES, cell.j * TILE_DEGREES);
-}
-
-// global coordinate system as defined by d1.b
-const OAKES_CLASSROOM: Cell = { i: 369894, j: -1220627 };
+const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 
 // Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
@@ -36,7 +31,7 @@ const gameBoard = new Board(
 
 // Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(document.getElementById("map")!, {
-  center: cellToLatLng(OAKES_CLASSROOM),
+  center: OAKES_CLASSROOM,
   zoom: GAMEPLAY_ZOOM_LEVEL,
   minZoom: GAMEPLAY_ZOOM_LEVEL,
   maxZoom: GAMEPLAY_ZOOM_LEVEL,
@@ -54,7 +49,7 @@ leaflet
   .addTo(map);
 
 // Add a marker to represent the player
-const playerMarker = leaflet.marker(cellToLatLng(OAKES_CLASSROOM));
+const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("YOU");
 playerMarker.addTo(map);
 
