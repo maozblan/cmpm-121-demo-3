@@ -22,6 +22,9 @@ const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 
+// other settings
+let auto_locate: boolean = false;
+
 // create board to hold geocache cells
 const gameBoard = new Board(
   TILE_DEGREES,
@@ -38,6 +41,20 @@ const map = leaflet.map(document.getElementById("map")!, {
   zoomControl: false,
   scrollWheelZoom: false,
 });
+
+// set up location
+map.on("locationfound", onLocationFound);
+map.on("locationerror", onLocationError);
+
+function onLocationFound(e: leaflet.LocationEvent) {
+  playerMarker.setLatLng(e.latlng);
+  removeOldCaches();
+  displayNearbyCaches();
+}
+
+function onLocationError(e: leaflet.ErrorEvent) {
+  alert(e.message);
+}
 
 // Populate the map with a background tile layer
 leaflet
@@ -186,9 +203,25 @@ const controlPanel: { [key: string]: Cmd } = {
       movePlayer({ i: 0, j: -1 });
     },
   },
+  sensor: {
+    execute() {
+      auto_locate = !auto_locate;
+      if (auto_locate) {
+        map.locate({ setView: true, maxZoom: GAMEPLAY_ZOOM_LEVEL });
+        document.getElementById("notification")!.textContent =
+          "autolocation on";
+      } else {
+        map.stopLocate();
+        document.getElementById("notification")!.textContent =
+          "autolocation off";
+      }
+    },
+  },
 };
 
 function movePlayer(direction: Cell): void {
+  if (auto_locate) return;
+
   const currentPos = playerMarker.getLatLng();
   const newPos = {
     lat: currentPos.lat + TILE_DEGREES * direction.i,
@@ -204,5 +237,3 @@ for (const button in controlPanel) {
   const bElement = document.querySelector<HTMLButtonElement>(`#${button}`)!;
   bElement.addEventListener("click", controlPanel[button].execute);
 }
-
-// if only i read instructions...
