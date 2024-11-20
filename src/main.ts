@@ -14,6 +14,7 @@ import Board from "./board.ts";
 // momento geocache
 import Geocache from "./geocache.ts";
 
+// game settings ////////////////////////////////////////////////////////////////
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 
 // Tunable gameplay parameters
@@ -24,6 +25,8 @@ const CACHE_SPAWN_PROBABILITY = 0.1;
 
 // other settings
 let auto_locate: boolean = false;
+let playerCoins: Coin[] = [];
+const bus = new EventTarget();
 
 // create board to hold geocache cells
 const gameBoard = new Board(
@@ -32,7 +35,7 @@ const gameBoard = new Board(
   CACHE_SPAWN_PROBABILITY,
 );
 
-// Create the map (element with id "map" is defined in index.html)
+// leaflet map /////////////////////////////////////////////////////////////////
 const map = leaflet.map(document.getElementById("map")!, {
   center: OAKES_CLASSROOM,
   zoom: GAMEPLAY_ZOOM_LEVEL,
@@ -42,21 +45,7 @@ const map = leaflet.map(document.getElementById("map")!, {
   scrollWheelZoom: false,
 });
 
-// set up location
-map.on("locationfound", onLocationFound);
-map.on("locationerror", onLocationError);
-
-function onLocationFound(e: leaflet.LocationEvent) {
-  playerMarker.setLatLng(e.latlng);
-  removeOldCaches();
-  displayNearbyCaches();
-}
-
-function onLocationError(e: leaflet.ErrorEvent) {
-  alert(e.message);
-}
-
-// Populate the map with a background tile layer
+// map background
 leaflet
   .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -65,13 +54,11 @@ leaflet
   })
   .addTo(map);
 
-// Add a marker to represent the player
 const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("YOU");
 playerMarker.addTo(map);
 
-// Display the player's points
-let playerCoins: Coin[] = [];
+// player coins ////////////////////////////////////////////////////////////////
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
@@ -87,7 +74,7 @@ function updateStatusPanel(): void {
 }
 updateStatusPanel();
 
-// all cache to map
+// cache to map ////////////////////////////////////////////////////////////////
 const visibleCaches: Geocache[] = [];
 const cacheLayer = leaflet.layerGroup().addTo(map);
 function spawnCache(cache: Geocache): void {
@@ -101,7 +88,8 @@ function spawnCache(cache: Geocache): void {
   rect.bindPopup(() => {
     const popupDiv = document.createElement("div");
     popupDiv.innerHTML = `
-        <div>Cache Index: ${cache.i}, ${cache.j}. It has <span id="value"></span> coins.</div>
+        <div>Cache Index: ${cache.i}, ${cache.j}. 
+          It has <span id="value"></span> coins.</div>
         <ul id="cache-inventory"></ul>
         <button id="collect">collect</button>
         <button id="deposit">deposit</button>`;
@@ -126,16 +114,10 @@ function spawnCache(cache: Geocache): void {
 
     return popupDiv;
 
-    function trade(source: Coin[], stock: Coin[]): Coin[][] {
-      if (source.length === 0) return [source, stock];
-      stock.push(source.shift()!);
-      return [source, stock];
-    }
     function updateUI(): void {
       updateStatusPanel();
       popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = cache
-        .stock
-        .length.toString();
+        .stock.length.toString();
       popupDiv.querySelector<HTMLUListElement>("#cache-inventory")!.innerHTML =
         cache.stock
           .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
@@ -144,20 +126,18 @@ function spawnCache(cache: Geocache): void {
   });
 }
 
-const app: HTMLDivElement = document.querySelector("#app")!;
+function trade(source: Coin[], stock: Coin[]): Coin[][] {
+  if (source.length === 0) return [source, stock];
+  stock.push(source.shift()!);
+  return [source, stock];
+}
 
-const button: HTMLButtonElement = document.createElement("button");
-button.textContent = "boopadooop";
-button.addEventListener("click", () => {
-  alert("you clicked the button!");
-});
-app.append(button);
-
-// updating caches with momento
+// updating map ////////////////////////////////////////////////////////////////
 const momento: { [key: string]: string } = {};
 function momentoKey(cell: Cell): string {
   return [cell.i, cell.j].toString();
 }
+
 function displayNearbyCaches() {
   gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
     const cache = new Geocache(cell);
@@ -178,7 +158,40 @@ function removeOldCaches() {
   visibleCaches.length = 0;
 }
 
-// controlPanel functionality
+bus.addEventListener("player-moved", () => {
+  removeOldCaches();
+  displayNearbyCaches();
+});
+
+// player movement /////////////////////////////////////////////////////////////
+// manual movement
+function movePlayer(direction: Cell): void {
+  if (auto_locate) return;
+
+  const currentPos = playerMarker.getLatLng();
+  const newPos = {
+    lat: currentPos.lat + TILE_DEGREES * direction.i,
+    lng: currentPos.lng + TILE_DEGREES * direction.j,
+  };
+  playerMarker.setLatLng(newPos);
+
+  bus.dispatchEvent(new Event("player-moved"));
+}
+
+// automatic movement
+map.on("locationfound", onLocationFound);
+map.on("locationerror", onLocationError);
+
+function onLocationFound(e: leaflet.LocationEvent) {
+  playerMarker.setLatLng(e.latlng);
+  bus.dispatchEvent(new Event("player-moved"));
+}
+
+function onLocationError(e: leaflet.ErrorEvent) {
+  alert(e.message);
+}
+
+// controlPanel functionality //////////////////////////////////////////////////
 interface Cmd {
   execute(): void;
 }
@@ -218,20 +231,6 @@ const controlPanel: { [key: string]: Cmd } = {
     },
   },
 };
-
-function movePlayer(direction: Cell): void {
-  if (auto_locate) return;
-
-  const currentPos = playerMarker.getLatLng();
-  const newPos = {
-    lat: currentPos.lat + TILE_DEGREES * direction.i,
-    lng: currentPos.lng + TILE_DEGREES * direction.j,
-  };
-  playerMarker.setLatLng(newPos);
-
-  removeOldCaches();
-  displayNearbyCaches();
-}
 
 for (const button in controlPanel) {
   const bElement = document.querySelector<HTMLButtonElement>(`#${button}`)!;
