@@ -22,11 +22,13 @@ const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
+const POLYLINE_OPTIONS = { color: "red" };
 
-// other settings
+// other data and settings
 let auto_locate: boolean = false;
 let playerCoins: Coin[] = [];
 let momento: { [key: string]: string } = {};
+let polylinePts: leaflet.LatLng[][] = [];
 const bus = new EventTarget();
 
 // create board to hold geocache cells
@@ -133,7 +135,7 @@ function trade(source: Coin[], stock: Coin[]): Coin[][] {
   return [source, stock];
 }
 
-// updating map ////////////////////////////////////////////////////////////////
+// updating map ////////////////////////
 function momentoKey(cell: Cell): string {
   return [cell.i, cell.j].toString();
 }
@@ -176,14 +178,15 @@ map.on("locationfound", onLocationFound);
 map.on("locationerror", onLocationError);
 
 function onLocationFound(e: leaflet.LocationEvent) {
-  console.log("location found", e.latlng);
   playerMarker.setLatLng(e.latlng);
+  newPolyline(playerMarker.getLatLng());
   bus.dispatchEvent(new Event("player-moved"));
 }
 
 function onLocationError(e: leaflet.ErrorEvent) {
-  if (e.code === 3) { // timeout from no movement
-    console.log("location timeout :(", e.message);
+  if (e.code === 3) {
+    // timeout from no movement
+    console.log("no movement detected :(", e.message);
     return;
   }
   alert(e.message);
@@ -195,7 +198,6 @@ function locatePlayer(b: boolean) {
       setView: true,
       watch: true,
       maxZoom: GAMEPLAY_ZOOM_LEVEL,
-      enableHighAccuracy: false,
     });
     document.getElementById("notification")!.textContent = "autolocation on";
   } else {
@@ -233,6 +235,7 @@ const controlPanel: { [key: string]: Cmd } = {
     execute() {
       auto_locate = !auto_locate;
       bus.dispatchEvent(new Event("locate-toggled"));
+      bus.dispatchEvent(new Event("player-moved"));
     },
   },
   reset: {
@@ -248,6 +251,26 @@ for (const button in controlPanel) {
   bElement.addEventListener("click", controlPanel[button].execute);
 }
 
+// polylines ////////////////////////////////////////////////////////////////////
+const polylineLayer = leaflet.layerGroup().addTo(map);
+function newPolyline(point: leaflet.LatLng) {
+  if (polylinePts.length > 0 && polylinePts[0].length > 1) {
+    drawPolyline();
+  }
+  polylinePts.unshift([point]);
+}
+
+function extendPolyline(point: leaflet.LatLng) {
+  polylinePts[0].push(point);
+  if (polylinePts[0].length > 1) {
+    drawPolyline();
+  }
+}
+
+function drawPolyline(points: leaflet.LatLng[] = polylinePts[0]) {
+  leaflet.polyline(points, POLYLINE_OPTIONS).addTo(polylineLayer);
+}
+
 // persistent data //////////////////////////////////////////////////////////////
 function restorePlayerData() {
   playerCoins = lsGet("playerCoins") ?? [];
@@ -258,7 +281,14 @@ function restorePlayerData() {
   auto_locate = lsGet("autolocate") ?? false;
   bus.dispatchEvent(new Event("locate-toggled"));
 
-  // generate caches
+  polylinePts = lsGet("polyline") ?? [];
+  for (const pts of polylinePts) {
+    console.log(pts);
+    drawPolyline(pts);
+  }
+  // generate caches at location
+  playerMarker.setLatLng(lsGet("playerPosition") ?? OAKES_CLASSROOM);
+  newPolyline(playerMarker.getLatLng());
   bus.dispatchEvent(new Event("player-moved"));
 }
 
@@ -267,21 +297,32 @@ function savePlayerData() {
   removeOldCaches(); // save to momento
   lsSet("momento", momento);
   lsSet("autolocate", auto_locate);
+  lsSet("playerPosition", playerMarker.getLatLng());
+  lsSet("polyline", polylinePts);
 }
 
 function resetProgress() {
   lsDel("playerCoins");
   lsDel("momento");
   lsDel("autolocate");
+  lsDel("playerPosition");
+  lsDel("polyline");
 
+  // clean map
+  cacheLayer.clearLayers();
+  polylineLayer.clearLayers();
+
+  // reset game data
   playerMarker.setLatLng(OAKES_CLASSROOM);
   playerCoins = [];
   momento = {};
   auto_locate = false;
+  polylinePts = [];
 
   bus.dispatchEvent(new Event("locate-toggled"));
   displayNearbyCaches();
   updateStatusPanel();
+  map.setView(OAKES_CLASSROOM, GAMEPLAY_ZOOM_LEVEL, { animate: true });
 }
 
 // deno-lint-ignore no-explicit-any
@@ -294,7 +335,7 @@ function lsGet(key: string) {
 }
 
 function lsDel(key: string) {
-  console.log(localStorage.removeItem(`cmpm121d3_${key}`), key);
+  localStorage.removeItem(`cmpm121d3_${key}`);
 }
 
 globalThis.addEventListener("beforeunload", savePlayerData);
@@ -304,6 +345,9 @@ globalThis.addEventListener("load", restorePlayerData);
 bus.addEventListener("player-moved", () => {
   removeOldCaches();
   displayNearbyCaches();
+  map.setView(playerMarker.getLatLng(), GAMEPLAY_ZOOM_LEVEL, { animate: true });
+  if (polylinePts.length === 0) newPolyline(playerMarker.getLatLng());
+  else extendPolyline(playerMarker.getLatLng());
 });
 
 bus.addEventListener("locate-toggled", () => locatePlayer(auto_locate));
