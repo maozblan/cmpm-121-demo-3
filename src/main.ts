@@ -26,6 +26,7 @@ const CACHE_SPAWN_PROBABILITY = 0.1;
 // other settings
 let auto_locate: boolean = false;
 let playerCoins: Coin[] = [];
+let momento: { [key: string]: string } = {};
 const bus = new EventTarget();
 
 // create board to hold geocache cells
@@ -133,7 +134,6 @@ function trade(source: Coin[], stock: Coin[]): Coin[][] {
 }
 
 // updating map ////////////////////////////////////////////////////////////////
-const momento: { [key: string]: string } = {};
 function momentoKey(cell: Cell): string {
   return [cell.i, cell.j].toString();
 }
@@ -147,8 +147,6 @@ function displayNearbyCaches() {
     spawnCache(cache);
   });
 }
-// instantly spawn caches on load
-displayNearbyCaches();
 
 function removeOldCaches() {
   visibleCaches.forEach((cache) => {
@@ -157,11 +155,6 @@ function removeOldCaches() {
   cacheLayer.clearLayers();
   visibleCaches.length = 0;
 }
-
-bus.addEventListener("player-moved", () => {
-  removeOldCaches();
-  displayNearbyCaches();
-});
 
 // player movement /////////////////////////////////////////////////////////////
 // manual movement
@@ -183,12 +176,32 @@ map.on("locationfound", onLocationFound);
 map.on("locationerror", onLocationError);
 
 function onLocationFound(e: leaflet.LocationEvent) {
+  console.log("location found", e.latlng);
   playerMarker.setLatLng(e.latlng);
   bus.dispatchEvent(new Event("player-moved"));
 }
 
 function onLocationError(e: leaflet.ErrorEvent) {
+  if (e.code === 3) { // timeout from no movement
+    console.log("location timeout :(", e.message);
+    return;
+  }
   alert(e.message);
+}
+
+function locatePlayer(b: boolean) {
+  if (b) {
+    map.locate({
+      setView: true,
+      watch: true,
+      maxZoom: GAMEPLAY_ZOOM_LEVEL,
+      enableHighAccuracy: false,
+    });
+    document.getElementById("notification")!.textContent = "autolocation on";
+  } else {
+    map.stopLocate();
+    document.getElementById("notification")!.textContent = "autolocation off";
+  }
 }
 
 // controlPanel functionality //////////////////////////////////////////////////
@@ -219,15 +232,13 @@ const controlPanel: { [key: string]: Cmd } = {
   sensor: {
     execute() {
       auto_locate = !auto_locate;
-      if (auto_locate) {
-        map.locate({ setView: true, maxZoom: GAMEPLAY_ZOOM_LEVEL });
-        document.getElementById("notification")!.textContent =
-          "autolocation on";
-      } else {
-        map.stopLocate();
-        document.getElementById("notification")!.textContent =
-          "autolocation off";
-      }
+      bus.dispatchEvent(new Event("locate-toggled"));
+    },
+  },
+  reset: {
+    execute() {
+      prompt("Do you really want to reset progress? [y/n]") === "y" &&
+        resetProgress();
     },
   },
 };
@@ -236,3 +247,63 @@ for (const button in controlPanel) {
   const bElement = document.querySelector<HTMLButtonElement>(`#${button}`)!;
   bElement.addEventListener("click", controlPanel[button].execute);
 }
+
+// persistent data //////////////////////////////////////////////////////////////
+function restorePlayerData() {
+  playerCoins = lsGet("playerCoins") ?? [];
+  updateStatusPanel();
+
+  momento = lsGet("momento") ?? {};
+
+  auto_locate = lsGet("autolocate") ?? false;
+  bus.dispatchEvent(new Event("locate-toggled"));
+
+  // generate caches
+  bus.dispatchEvent(new Event("player-moved"));
+}
+
+function savePlayerData() {
+  lsSet("playerCoins", playerCoins);
+  removeOldCaches(); // save to momento
+  lsSet("momento", momento);
+  lsSet("autolocate", auto_locate);
+}
+
+function resetProgress() {
+  lsDel("playerCoins");
+  lsDel("momento");
+  lsDel("autolocate");
+
+  playerMarker.setLatLng(OAKES_CLASSROOM);
+  playerCoins = [];
+  momento = {};
+  auto_locate = false;
+
+  bus.dispatchEvent(new Event("locate-toggled"));
+  displayNearbyCaches();
+  updateStatusPanel();
+}
+
+// deno-lint-ignore no-explicit-any
+function lsSet(key: string, data: any) {
+  localStorage.setItem(`cmpm121d3_${key}`, JSON.stringify(data));
+}
+
+function lsGet(key: string) {
+  return JSON.parse(localStorage.getItem(`cmpm121d3_${key}`) ?? "null");
+}
+
+function lsDel(key: string) {
+  console.log(localStorage.removeItem(`cmpm121d3_${key}`), key);
+}
+
+globalThis.addEventListener("beforeunload", savePlayerData);
+globalThis.addEventListener("load", restorePlayerData);
+
+// event listeners //////////////////////////////////////////////////////////////
+bus.addEventListener("player-moved", () => {
+  removeOldCaches();
+  displayNearbyCaches();
+});
+
+bus.addEventListener("locate-toggled", () => locatePlayer(auto_locate));
