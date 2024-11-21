@@ -351,3 +351,5 @@ bus.addEventListener("player-moved", () => {
 });
 
 bus.addEventListener("locate-toggled", () => locatePlayer(auto_locate));
+
+// it took an embarrassingly long time
