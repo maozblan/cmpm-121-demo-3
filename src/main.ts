@@ -14,8 +14,12 @@ import Board from "./board.ts";
 // momento geocache
 import Geocache from "./geocache.ts";
 
+// setup for Leaflet ////////////////////////////////////////////////////////////
 // game settings ////////////////////////////////////////////////////////////////
-const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
+const OAKES_CLASSROOM: LatLng = leaflet.latLng(
+  36.98949379578401,
+  -122.06277128548504,
+);
 
 // Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
@@ -26,7 +30,7 @@ const POLYLINE_OPTIONS = { color: "red" };
 
 // other data and settings
 let momento: { [key: string]: string } = {};
-let polylinePts: leaflet.LatLng[][] = [];
+let polylinePts: LatLng[][] = [];
 const bus = new EventTarget();
 
 // create board to hold geocache cells
@@ -40,28 +44,28 @@ const gameBoard = new Board(
 interface IPlayer {
   getAutoLocation(): boolean;
   setAutoLocation(b: boolean): void;
-  getPosition(): leaflet.LatLng;
-  setPosition(latLng: leaflet.LatLng): void;
+  getPosition(): LatLng;
+  setPosition(latLng: LatLng): void;
   getPlayerCoins(): Coin[];
   setPlayerCoins(coins: Coin[]): void;
   move(direction: Cell): void;
 }
 
 class Player implements IPlayer {
-  private position: leaflet.LatLng;
+  private position: LatLng;
   private autolocation: boolean;
   private coins: Coin[];
 
-  constructor(initialPosition: leaflet.LatLng) {
+  constructor(initialPosition: LatLng) {
     this.position = initialPosition;
     this.autolocation = false;
     this.coins = [];
   }
 
-  getPosition(): leaflet.LatLng {
+  getPosition(): LatLng {
     return this.position;
   }
-  setPosition(latLng: leaflet.LatLng): void {
+  setPosition(latLng: LatLng): void {
     this.position = latLng;
     bus.dispatchEvent(
       new CustomEvent("player-move-request", { detail: latLng }),
@@ -85,43 +89,89 @@ class Player implements IPlayer {
   move(direction: Cell): void {
     if (this.autolocation) return;
 
-    this.setPosition(leaflet.latLng({
-      lat: this.position.lat + TILE_DEGREES * direction.i,
-      lng: this.position.lng + TILE_DEGREES * direction.j,
-    }));
+    this.setPosition(
+      leaflet.latLng({
+        lat: this.position.lat + TILE_DEGREES * direction.i,
+        lng: this.position.lng + TILE_DEGREES * direction.j,
+      }),
+    );
   }
 }
 
 const player = new Player(OAKES_CLASSROOM);
 
 // leaflet map /////////////////////////////////////////////////////////////////
-const map = leaflet.map(document.getElementById("map")!, {
-  center: OAKES_CLASSROOM,
-  zoom: GAMEPLAY_ZOOM_LEVEL,
-  minZoom: GAMEPLAY_ZOOM_LEVEL,
-  maxZoom: GAMEPLAY_ZOOM_LEVEL,
-  zoomControl: false,
-  scrollWheelZoom: false,
-});
+class Map {
+  playerMarker: leaflet.Marker;
+  map: leaflet.Map;
+  private layers: { [key: string]: leaflet.LayerGroup } = {};
 
-// map background
-leaflet
-  .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution:
-      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  })
-  .addTo(map);
+  constructor(
+    htmlElement: HTMLElement,
+    center: LatLng,
+    zoom: number,
+    minZoom: number,
+    maxZoom: number,
+  ) {
+    this.map = leaflet.map(htmlElement, {
+      center,
+      zoom,
+      minZoom,
+      maxZoom,
+      zoomControl: false,
+      scrollWheelZoom: false,
+    });
+    // map background
+    leaflet
+      .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      })
+      .addTo(this.map);
 
-const playerMarker = leaflet.marker(OAKES_CLASSROOM);
-playerMarker.bindTooltip("YOU");
-playerMarker.addTo(map);
+    this.playerMarker = leaflet.marker(OAKES_CLASSROOM);
+    this.playerMarker.bindTooltip("YOU");
+    this.playerMarker.addTo(this.map);
+  }
+
+  movePlayer(latLng: LatLng) {
+    this.playerMarker.setLatLng(latLng);
+  }
+
+  centerTo(center: LatLng, zoom: number) {
+    this.map.setView(center, zoom, { animate: true });
+  }
+
+  newLayer(key: string) {
+    this.layers[key] = leaflet.layerGroup().addTo(this.map);
+    return this.layers[key];
+  }
+  addToLayer(key: string, item: leaflet.Layer): void {
+    if (this.layers[key] === undefined) {
+      throw new Error(`Layer ${key} not found`);
+    }
+    this.layers[key].addLayer(item);
+  }
+  clearLayer(key: string): void {
+    this.layers[key].clearLayers();
+  }
+}
+
+const gameMap = new Map(
+  document.getElementById("map")!,
+  OAKES_CLASSROOM,
+  GAMEPLAY_ZOOM_LEVEL,
+  GAMEPLAY_ZOOM_LEVEL,
+  GAMEPLAY_ZOOM_LEVEL,
+);
 
 // player coins ////////////////////////////////////////////////////////////////
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
-    player.getPlayerCoins()
+    player
+      .getPlayerCoins()
       .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
       .join("");
 
@@ -135,13 +185,13 @@ updateStatusPanel();
 
 // cache to map ////////////////////////////////////////////////////////////////
 const visibleCaches: Geocache[] = [];
-const cacheLayer = leaflet.layerGroup().addTo(map);
+gameMap.newLayer("cache");
 function spawnCache(cache: Geocache): void {
   visibleCaches.push(cache);
 
   const bounds = gameBoard.getCellBounds({ i: cache.i, j: cache.j });
   const rect = leaflet.rectangle(bounds);
-  cacheLayer.addLayer(rect);
+  gameMap.addToLayer("cache", rect);
 
   // Handle interactions with the cache
   rect.bindPopup(() => {
@@ -200,7 +250,7 @@ function momentoKey(cell: Cell): string {
 }
 
 function displayNearbyCaches() {
-  gameBoard.getCellsNearPoint(playerMarker.getLatLng()).forEach((cell) => {
+  gameBoard.getCellsNearPoint(player.getPosition()).forEach((cell) => {
     const cache = new Geocache(cell);
     if (momento[momentoKey(cell)] !== undefined) {
       cache.fromMomento(momento[momentoKey(cell)]);
@@ -213,13 +263,13 @@ function removeOldCaches() {
   visibleCaches.forEach((cache) => {
     momento[momentoKey({ i: cache.i, j: cache.j })] = cache.toMomento();
   });
-  cacheLayer.clearLayers();
+  gameMap.clearLayer("cache");
   visibleCaches.length = 0;
 }
 
 // automatic movement //////////////////////////////////////////////////////////
-map.on("locationfound", onLocationFound);
-map.on("locationerror", onLocationError);
+gameMap.map.on("locationfound", onLocationFound);
+gameMap.map.on("locationerror", onLocationError);
 
 function onLocationFound(e: leaflet.LocationEvent) {
   newPolyline(e.latlng);
@@ -237,14 +287,14 @@ function onLocationError(e: leaflet.ErrorEvent) {
 
 function locatePlayer(b: boolean) {
   if (b) {
-    map.locate({
+    gameMap.map.locate({
       setView: true,
       watch: true,
       maxZoom: GAMEPLAY_ZOOM_LEVEL,
     });
     document.getElementById("notification")!.textContent = "autolocation on";
   } else {
-    map.stopLocate();
+    gameMap.map.stopLocate();
     document.getElementById("notification")!.textContent = "autolocation off";
   }
 }
@@ -294,23 +344,23 @@ for (const button in controlPanel) {
 }
 
 // polylines ////////////////////////////////////////////////////////////////////
-const polylineLayer = leaflet.layerGroup().addTo(map);
-function newPolyline(point: leaflet.LatLng) {
+gameMap.newLayer("polyline");
+function newPolyline(point: LatLng) {
   if (polylinePts.length > 0 && polylinePts[0].length > 1) {
     drawPolyline();
   }
   polylinePts.unshift([point]);
 }
 
-function extendPolyline(point: leaflet.LatLng) {
+function extendPolyline(point: LatLng) {
   polylinePts[0].push(point);
   if (polylinePts[0].length > 1) {
     drawPolyline();
   }
 }
 
-function drawPolyline(points: leaflet.LatLng[] = polylinePts[0]) {
-  leaflet.polyline(points, POLYLINE_OPTIONS).addTo(polylineLayer);
+function drawPolyline(points: LatLng[] = polylinePts[0]) {
+  gameMap.addToLayer("polyline", leaflet.polyline(points, POLYLINE_OPTIONS));
 }
 
 // persistent data //////////////////////////////////////////////////////////////
@@ -325,7 +375,6 @@ function restorePlayerData() {
 
   polylinePts = lsGet("polyline") ?? [];
   for (const pts of polylinePts) {
-    console.log(pts);
     drawPolyline(pts);
   }
   // generate caches at location
@@ -339,7 +388,7 @@ function savePlayerData() {
   removeOldCaches(); // save to momento
   lsSet("momento", momento);
   lsSet("autolocate", player.getAutoLocation());
-  lsSet("playerPosition", playerMarker.getLatLng());
+  lsSet("playerPosition", player.getPosition());
   lsSet("polyline", polylinePts);
 }
 
@@ -351,11 +400,11 @@ function resetProgress() {
   lsDel("polyline");
 
   // clean map
-  cacheLayer.clearLayers();
-  polylineLayer.clearLayers();
+  gameMap.clearLayer("cache");
+  gameMap.clearLayer("polyline");
 
   // reset game data
-  playerMarker.setLatLng(OAKES_CLASSROOM);
+  player.setPosition(OAKES_CLASSROOM);
   player.setPlayerCoins([]);
   player.setAutoLocation(false);
   momento = {};
@@ -364,7 +413,7 @@ function resetProgress() {
   bus.dispatchEvent(new Event("locate-toggled"));
   displayNearbyCaches();
   updateStatusPanel();
-  map.setView(OAKES_CLASSROOM, GAMEPLAY_ZOOM_LEVEL, { animate: true });
+  gameMap.centerTo(OAKES_CLASSROOM, GAMEPLAY_ZOOM_LEVEL);
 }
 
 // deno-lint-ignore no-explicit-any
@@ -387,9 +436,9 @@ globalThis.addEventListener("load", restorePlayerData);
 bus.addEventListener("player-moved", () => {
   removeOldCaches();
   displayNearbyCaches();
-  map.setView(playerMarker.getLatLng(), GAMEPLAY_ZOOM_LEVEL, { animate: true });
-  if (polylinePts.length === 0) newPolyline(playerMarker.getLatLng());
-  else extendPolyline(playerMarker.getLatLng());
+  gameMap.centerTo(player.getPosition(), GAMEPLAY_ZOOM_LEVEL);
+  if (polylinePts.length === 0) newPolyline(player.getPosition());
+  else extendPolyline(player.getPosition());
 });
 
 bus.addEventListener(
@@ -397,11 +446,8 @@ bus.addEventListener(
   () => locatePlayer(player.getAutoLocation()),
 );
 
-bus.addEventListener(
-  "player-move-request",
-  (e: CustomEventInit<leaflet.LatLng>) => {
-    const newLoc = e.detail as leaflet.LatLng;
-    playerMarker.setLatLng(newLoc);
-    bus.dispatchEvent(new Event("player-moved"));
-  },
-);
+bus.addEventListener("player-move-request", (e: CustomEventInit<LatLng>) => {
+  const newLoc = e.detail as LatLng;
+  gameMap.movePlayer(newLoc);
+  bus.dispatchEvent(new Event("player-moved"));
+});

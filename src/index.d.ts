@@ -6,3 +6,8 @@ interface Cell {
 interface Coin extends Cell {
   readonly serial: number;
 }
+
+interface LatLng {
+  readonly lat: number;
+  readonly lng: number;
+}
