@@ -14,7 +14,6 @@ import Board from "./board.ts";
 // momento geocache
 import Geocache from "./geocache.ts";
 
-// setup for Leaflet ////////////////////////////////////////////////////////////
 // game settings ////////////////////////////////////////////////////////////////
 const OAKES_CLASSROOM: LatLng = leaflet.latLng(
   36.98949379578401,
@@ -30,7 +29,6 @@ const POLYLINE_OPTIONS = { color: "red" };
 
 // other data and settings
 let momento: { [key: string]: string } = {};
-let polylinePts: LatLng[][] = [];
 const bus = new EventTarget();
 
 // create board to hold geocache cells
@@ -272,7 +270,7 @@ gameMap.map.on("locationfound", onLocationFound);
 gameMap.map.on("locationerror", onLocationError);
 
 function onLocationFound(e: leaflet.LocationEvent) {
-  newPolyline(e.latlng);
+  polylines.new(e.latlng);
   player.setPosition(e.latlng);
 }
 
@@ -344,24 +342,42 @@ for (const button in controlPanel) {
 }
 
 // polylines ////////////////////////////////////////////////////////////////////
-gameMap.newLayer("polyline");
-function newPolyline(point: LatLng) {
-  if (polylinePts.length > 0 && polylinePts[0].length > 1) {
-    drawPolyline();
+class PolyLines {
+  private linePts: LatLng[][] = [];
+  private map: Map;
+
+  constructor(map: Map) {
+    this.map = map;
+    this.map.newLayer("polyline");
   }
-  polylinePts.unshift([point]);
+
+  getLinePts(): LatLng[][] {
+    return this.linePts;
+  }
+  setLinePts(pts: LatLng[][]): void {
+    this.linePts = pts;
+  }
+
+  new(point: LatLng): void {
+    if (this.linePts.length > 0 && this.linePts[0].length > 1) {
+      this.draw();
+    }
+    this.linePts.unshift([point]);
+  }
+
+  extendLast(point: LatLng): void {
+    this.linePts[0].push(point);
+    if (this.linePts[0].length > 1) {
+      this.draw();
+    }
+  }
+
+  draw(points: LatLng[] = this.linePts[0]): void {
+    this.map.addToLayer("polyline", leaflet.polyline(points, POLYLINE_OPTIONS));
+  }
 }
 
-function extendPolyline(point: LatLng) {
-  polylinePts[0].push(point);
-  if (polylinePts[0].length > 1) {
-    drawPolyline();
-  }
-}
-
-function drawPolyline(points: LatLng[] = polylinePts[0]) {
-  gameMap.addToLayer("polyline", leaflet.polyline(points, POLYLINE_OPTIONS));
-}
+const polylines = new PolyLines(gameMap);
 
 // persistent data //////////////////////////////////////////////////////////////
 function restorePlayerData() {
@@ -373,13 +389,13 @@ function restorePlayerData() {
   player.setAutoLocation(lsGet("autolocate") ?? false);
   bus.dispatchEvent(new Event("locate-toggled"));
 
-  polylinePts = lsGet("polyline") ?? [];
-  for (const pts of polylinePts) {
-    drawPolyline(pts);
+  polylines.setLinePts(lsGet("polyline") ?? []);
+  for (const pts of polylines.getLinePts()) {
+    polylines.draw(pts);
   }
   // generate caches at location
   const pos = lsGet("playerPosition") ?? OAKES_CLASSROOM;
-  newPolyline(pos);
+  polylines.new(pos);
   player.setPosition(pos);
 }
 
@@ -389,7 +405,7 @@ function savePlayerData() {
   lsSet("momento", momento);
   lsSet("autolocate", player.getAutoLocation());
   lsSet("playerPosition", player.getPosition());
-  lsSet("polyline", polylinePts);
+  lsSet("polyline", polylines.getLinePts());
 }
 
 function resetProgress() {
@@ -408,7 +424,7 @@ function resetProgress() {
   player.setPlayerCoins([]);
   player.setAutoLocation(false);
   momento = {};
-  polylinePts = [];
+  polylines.setLinePts([]);
 
   bus.dispatchEvent(new Event("locate-toggled"));
   displayNearbyCaches();
@@ -437,8 +453,8 @@ bus.addEventListener("player-moved", () => {
   removeOldCaches();
   displayNearbyCaches();
   gameMap.centerTo(player.getPosition(), GAMEPLAY_ZOOM_LEVEL);
-  if (polylinePts.length === 0) newPolyline(player.getPosition());
-  else extendPolyline(player.getPosition());
+  if (polylines.getLinePts().length === 0) polylines.new(player.getPosition());
+  else polylines.extendLast(player.getPosition());
 });
 
 bus.addEventListener(
