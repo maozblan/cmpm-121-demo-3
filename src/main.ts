@@ -186,54 +186,57 @@ const visibleCaches: Geocache[] = [];
 gameMap.newLayer("cache");
 function spawnCache(cache: Geocache): void {
   visibleCaches.push(cache);
-
   const bounds = gameBoard.getCellBounds({ i: cache.i, j: cache.j });
   const rect = leaflet.rectangle(bounds);
   gameMap.addToLayer("cache", rect);
 
-  // Handle interactions with the cache
-  rect.bindPopup(() => {
-    const popupDiv = document.createElement("div");
-    popupDiv.innerHTML = `
-        <div>Cache Index: ${cache.i}, ${cache.j}. 
-          It has <span id="value"></span> coins.</div>
-        <ul id="cache-inventory"></ul>
-        <button id="collect">collect</button>
-        <button id="deposit">deposit</button>`;
-    // instantly update ui to get the number of coins and inventory to display
-    updateUI();
+  rect.bindPopup(() => createCachePopup(cache));
+}
 
-    // retrive coins from cache
-    let playerCoins = player.getPlayerCoins();
-    popupDiv
-      .querySelector<HTMLButtonElement>("#collect")!
-      .addEventListener("click", () => {
-        [cache.stock, playerCoins] = trade(cache.stock, playerCoins);
-        player.setPlayerCoins(playerCoins);
-        updateUI();
-      });
+function createCachePopup(cache: Geocache): HTMLElement {
+  const popupDiv = document.createElement("div");
+  popupDiv.innerHTML = `
+    <div>Cache Index: ${cache.i}, ${cache.j}. 
+      It has <span id="value"></span> coins.</div>
+    <ul id="cache-inventory"></ul>
+    <button id="collect">collect</button>
+    <button id="deposit">deposit</button>`;
 
-    // deposit coins into cache
-    popupDiv
-      .querySelector<HTMLButtonElement>("#deposit")!
-      .addEventListener("click", () => {
-        [playerCoins, cache.stock] = trade(playerCoins, cache.stock);
-        player.setPlayerCoins(playerCoins);
-        updateUI();
-      });
+  // Instantly update UI
+  updateCacheUI(popupDiv, cache);
+  setupCacheButtons(popupDiv, cache);
 
-    return popupDiv;
+  return popupDiv;
+}
 
-    function updateUI(): void {
-      updateStatusPanel();
-      popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = cache
-        .stock.length.toString();
-      popupDiv.querySelector<HTMLUListElement>("#cache-inventory")!.innerHTML =
-        cache.stock
-          .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
-          .join("");
-    }
-  });
+function updateCacheUI(popupDiv: HTMLElement, cache: Geocache): void {
+  updateStatusPanel();
+  popupDiv.querySelector<HTMLSpanElement>("#value")!.textContent = cache
+    .stock.length.toString();
+  popupDiv.querySelector<HTMLUListElement>("#cache-inventory")!.innerHTML =
+    cache.stock
+      .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
+      .join("");
+}
+
+function setupCacheButtons(popupDiv: HTMLElement, cache: Geocache): void {
+  popupDiv
+    .querySelector<HTMLButtonElement>("#collect")!
+    .addEventListener("click", () => {
+      let playerCoins = player.getPlayerCoins();
+      [cache.stock, playerCoins] = trade(cache.stock, playerCoins);
+      player.setPlayerCoins(playerCoins);
+      updateCacheUI(popupDiv, cache);
+    });
+
+  popupDiv
+    .querySelector<HTMLButtonElement>("#deposit")!
+    .addEventListener("click", () => {
+      let playerCoins = player.getPlayerCoins();
+      [playerCoins, cache.stock] = trade(playerCoins, cache.stock);
+      player.setPlayerCoins(playerCoins);
+      updateCacheUI(popupDiv, cache);
+    });
 }
 
 function trade(source: Coin[], stock: Coin[]): Coin[][] {
