@@ -25,8 +25,6 @@ const CACHE_SPAWN_PROBABILITY = 0.1;
 const POLYLINE_OPTIONS = { color: "red" };
 
 // other data and settings
-let auto_locate: boolean = false;
-let playerCoins: Coin[] = [];
 let momento: { [key: string]: string } = {};
 let polylinePts: leaflet.LatLng[][] = [];
 const bus = new EventTarget();
@@ -37,6 +35,64 @@ const gameBoard = new Board(
   NEIGHBORHOOD_SIZE,
   CACHE_SPAWN_PROBABILITY,
 );
+
+// player //////////////////////////////////////////////////////////////////////
+interface IPlayer {
+  getAutoLocation(): boolean;
+  setAutoLocation(b: boolean): void;
+  getPosition(): leaflet.LatLng;
+  setPosition(latLng: leaflet.LatLng): void;
+  getPlayerCoins(): Coin[];
+  setPlayerCoins(coins: Coin[]): void;
+  move(direction: Cell): void;
+}
+
+class Player implements IPlayer {
+  private position: leaflet.LatLng;
+  private autolocation: boolean;
+  private coins: Coin[];
+
+  constructor(initialPosition: leaflet.LatLng) {
+    this.position = initialPosition;
+    this.autolocation = false;
+    this.coins = [];
+  }
+
+  getPosition(): leaflet.LatLng {
+    return this.position;
+  }
+  setPosition(latLng: leaflet.LatLng): void {
+    this.position = latLng;
+    bus.dispatchEvent(
+      new CustomEvent("player-move-request", { detail: latLng }),
+    );
+  }
+
+  setAutoLocation(b: boolean) {
+    this.autolocation = b;
+  }
+  getAutoLocation(): boolean {
+    return this.autolocation;
+  }
+
+  getPlayerCoins(): Coin[] {
+    return this.coins;
+  }
+  setPlayerCoins(coins: Coin[]): void {
+    this.coins = coins;
+  }
+
+  move(direction: Cell): void {
+    if (this.autolocation) return;
+
+    this.setPosition(leaflet.latLng({
+      lat: this.position.lat + TILE_DEGREES * direction.i,
+      lng: this.position.lng + TILE_DEGREES * direction.j,
+    }));
+  }
+}
+
+const player = new Player(OAKES_CLASSROOM);
 
 // leaflet map /////////////////////////////////////////////////////////////////
 const map = leaflet.map(document.getElementById("map")!, {
@@ -65,15 +121,15 @@ playerMarker.addTo(map);
 const statusPanel = document.querySelector<HTMLDivElement>("#inventory-total")!;
 function updateStatusPanel(): void {
   document.querySelector<HTMLUListElement>("#inventory-items")!.innerHTML =
-    playerCoins
+    player.getPlayerCoins()
       .map((coin) => `<li>${coin.i}:${coin.j}#${coin.serial}</li>`)
       .join("");
 
-  if (playerCoins.length === 0) {
+  if (player.getPlayerCoins().length === 0) {
     statusPanel.innerHTML = "No coins yet...";
     return;
   }
-  statusPanel.innerHTML = `${playerCoins.length} coins accumulated`;
+  statusPanel.innerHTML = `${player.getPlayerCoins().length} coins accumulated`;
 }
 updateStatusPanel();
 
@@ -100,10 +156,12 @@ function spawnCache(cache: Geocache): void {
     updateUI();
 
     // retrive coins from cache
+    let playerCoins = player.getPlayerCoins();
     popupDiv
       .querySelector<HTMLButtonElement>("#collect")!
       .addEventListener("click", () => {
         [cache.stock, playerCoins] = trade(cache.stock, playerCoins);
+        player.setPlayerCoins(playerCoins);
         updateUI();
       });
 
@@ -112,6 +170,7 @@ function spawnCache(cache: Geocache): void {
       .querySelector<HTMLButtonElement>("#deposit")!
       .addEventListener("click", () => {
         [playerCoins, cache.stock] = trade(playerCoins, cache.stock);
+        player.setPlayerCoins(playerCoins);
         updateUI();
       });
 
@@ -158,29 +217,13 @@ function removeOldCaches() {
   visibleCaches.length = 0;
 }
 
-// player movement /////////////////////////////////////////////////////////////
-// manual movement
-function movePlayer(direction: Cell): void {
-  if (auto_locate) return;
-
-  const currentPos = playerMarker.getLatLng();
-  const newPos = {
-    lat: currentPos.lat + TILE_DEGREES * direction.i,
-    lng: currentPos.lng + TILE_DEGREES * direction.j,
-  };
-  playerMarker.setLatLng(newPos);
-
-  bus.dispatchEvent(new Event("player-moved"));
-}
-
-// automatic movement
+// automatic movement //////////////////////////////////////////////////////////
 map.on("locationfound", onLocationFound);
 map.on("locationerror", onLocationError);
 
 function onLocationFound(e: leaflet.LocationEvent) {
-  playerMarker.setLatLng(e.latlng);
-  newPolyline(playerMarker.getLatLng());
-  bus.dispatchEvent(new Event("player-moved"));
+  newPolyline(e.latlng);
+  player.setPosition(e.latlng);
 }
 
 function onLocationError(e: leaflet.ErrorEvent) {
@@ -213,29 +256,28 @@ interface Cmd {
 const controlPanel: { [key: string]: Cmd } = {
   north: {
     execute() {
-      movePlayer({ i: 1, j: 0 });
+      player.move({ i: 1, j: 0 });
     },
   },
   east: {
     execute() {
-      movePlayer({ i: 0, j: 1 });
+      player.move({ i: 0, j: 1 });
     },
   },
   south: {
     execute() {
-      movePlayer({ i: -1, j: 0 });
+      player.move({ i: -1, j: 0 });
     },
   },
   west: {
     execute() {
-      movePlayer({ i: 0, j: -1 });
+      player.move({ i: 0, j: -1 });
     },
   },
   sensor: {
     execute() {
-      auto_locate = !auto_locate;
+      player.setAutoLocation(!player.getAutoLocation());
       bus.dispatchEvent(new Event("locate-toggled"));
-      bus.dispatchEvent(new Event("player-moved"));
     },
   },
   reset: {
@@ -273,12 +315,12 @@ function drawPolyline(points: leaflet.LatLng[] = polylinePts[0]) {
 
 // persistent data //////////////////////////////////////////////////////////////
 function restorePlayerData() {
-  playerCoins = lsGet("playerCoins") ?? [];
+  player.setPlayerCoins(lsGet("playerCoins") ?? []);
   updateStatusPanel();
 
   momento = lsGet("momento") ?? {};
 
-  auto_locate = lsGet("autolocate") ?? false;
+  player.setAutoLocation(lsGet("autolocate") ?? false);
   bus.dispatchEvent(new Event("locate-toggled"));
 
   polylinePts = lsGet("polyline") ?? [];
@@ -287,16 +329,16 @@ function restorePlayerData() {
     drawPolyline(pts);
   }
   // generate caches at location
-  playerMarker.setLatLng(lsGet("playerPosition") ?? OAKES_CLASSROOM);
-  newPolyline(playerMarker.getLatLng());
-  bus.dispatchEvent(new Event("player-moved"));
+  const pos = lsGet("playerPosition") ?? OAKES_CLASSROOM;
+  newPolyline(pos);
+  player.setPosition(pos);
 }
 
 function savePlayerData() {
-  lsSet("playerCoins", playerCoins);
+  lsSet("playerCoins", player.getPlayerCoins());
   removeOldCaches(); // save to momento
   lsSet("momento", momento);
-  lsSet("autolocate", auto_locate);
+  lsSet("autolocate", player.getAutoLocation());
   lsSet("playerPosition", playerMarker.getLatLng());
   lsSet("polyline", polylinePts);
 }
@@ -314,9 +356,9 @@ function resetProgress() {
 
   // reset game data
   playerMarker.setLatLng(OAKES_CLASSROOM);
-  playerCoins = [];
+  player.setPlayerCoins([]);
+  player.setAutoLocation(false);
   momento = {};
-  auto_locate = false;
   polylinePts = [];
 
   bus.dispatchEvent(new Event("locate-toggled"));
@@ -350,6 +392,16 @@ bus.addEventListener("player-moved", () => {
   else extendPolyline(playerMarker.getLatLng());
 });
 
-bus.addEventListener("locate-toggled", () => locatePlayer(auto_locate));
+bus.addEventListener(
+  "locate-toggled",
+  () => locatePlayer(player.getAutoLocation()),
+);
 
-// it took an embarrassingly long time
+bus.addEventListener(
+  "player-move-request",
+  (e: CustomEventInit<leaflet.LatLng>) => {
+    const newLoc = e.detail as leaflet.LatLng;
+    playerMarker.setLatLng(newLoc);
+    bus.dispatchEvent(new Event("player-moved"));
+  },
+);
